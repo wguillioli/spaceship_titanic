@@ -1,0 +1,174 @@
+---
+title: "spaceship_titanic"
+format: html
+editor: visual
+---
+
+Spaceship Titanic
+
+Objective: learn Quarto and practice caret
+
+<https://www.kaggle.com/c/spaceship-titanic/>
+
+```{r}
+# project setup
+
+rm(list = ls())
+
+require(tidyverse)
+require(caret)
+require(visdat)
+require(mice) #imputations
+require(rpart)
+require(rpart.plot)
+require(rattle) #pretty print trees
+
+wd <- "C:/GitHub/spaceship_titanic"
+# setwd(wd) 
+```
+
+```{r}
+# load data 
+# train
+train <- read.csv(paste0(wd, "/data/train.csv"),
+                  stringsAsFactors = FALSE,
+                  na.strings = "")
+glimpse(train)
+summary(train)
+
+# test
+test <- read.csv(paste0(wd, "/data/test.csv"),
+                  stringsAsFactors = FALSE,
+                  na.strings = "")
+glimpse(test)
+summary(test)
+
+```
+
+```{r}
+# combine to create our main dataset to work with d
+
+train$dat <- "train"
+test$dat <- "test" 
+test$Transported <- "NA"
+
+d <- bind_rows(train,
+               test)
+glimpse(d)
+summary(d)
+```
+
+Good to see a balanced dataset
+
+```{r}
+# y explore
+train %>%
+  group_by(Transported) %>%
+  summarise(n = n()) %>%
+  mutate(p = round(n/sum(n),3)) 
+
+```
+
+```{r}
+# missing values
+na_df <- sapply(d, function(df){sum(is.na(df)==TRUE);})
+na_df <- data.frame(na_df)
+na_df$var <- row.names(na_df)
+print(na_df)
+```
+
+Most variables have \~300 NAs so let's check if it's a pattern.
+
+```{r}
+vis_miss(d,
+         sort_miss = TRUE,
+         #cluster = TRUE,
+         show_perc_col = TRUE) #no concerning pattern is observed
+```
+
+There isn't an obvious pattern, but let's double check
+
+```{r}
+
+# variables with NA
+vars_na <- na_df %>%
+  filter(na_df > 0) %>%
+  select(var)
+
+md.pattern(d[, 1:5],
+           plot = TRUE,
+           rotate.names = TRUE)
+
+# hard to see but assume no pattern ovbious
+
+```
+
+Let's impute assuming it's random using mice, instead of manually doing median or mode.
+
+```{r}
+# impute NAs
+d_imp <- mice(d)
+           #method = "cart")
+
+d_imp
+head(complete(d_imp))
+d_imp <- data.frame(complete(d_imp))
+
+sapply(d_imp, function(df){sum(is.na(df)==TRUE);})
+
+d <- d_imp
+
+# validate no more NA
+
+
+```
+
+```{r}
+# missing values
+# corr
+# y
+# univariate EDA to get to know the vars
+# univ eda to check potential of prediction
+# basic rpart
+# caret algos - rf, xgb, mn, etc...
+
+# setwd(wd) - figure out how to make work at knitr root.dir option
+
+```
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+1 + 1
+```
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+Hola soy Walter y estoy probando R
+
+```{r}
+wd <- "C:/GitHub/spaceship_titanic/"
+setwd(wd)
+
+train <- read.csv("./data/train.csv",
+                  stringsAsFactors = FALSE)
+```
+
+Y ahora print la head
+
+```{r}
+head(train)
+```
