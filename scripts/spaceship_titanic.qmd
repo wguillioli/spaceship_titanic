@@ -4,13 +4,14 @@ format: html
 editor: visual
 ---
 
-Spaceship Titanic
+# Spaceship Titanic
 
 Objective: learn Quarto and practice caret
 
 <https://www.kaggle.com/c/spaceship-titanic/>
 
 ```{r}
+#| warning: false
 # project setup
 
 rm(list = ls())
@@ -22,9 +23,19 @@ require(mice) #imputations
 require(rpart)
 require(rpart.plot)
 require(rattle) #pretty print trees
+require(gender)
 
 wd <- "C:/GitHub/spaceship_titanic"
 # setwd(wd) 
+
+get_percentiles <- function(column){
+  print(quantile(column, 
+                 prob = c(0, 0.01, 0.05, 0.10, 0.25, 0.50, 
+                          0.75, 0.90, 0.95, 0.99, 1),
+                 na.rm = TRUE),
+        )
+}
+
 ```
 
 ```{r}
@@ -69,106 +80,292 @@ train %>%
 
 ```
 
+Basic univariate exploration to understnad each variable. Derive new variables and coerce as needed. Don't impute cause will do that with mice later.
+
 ```{r}
-# missing values
-na_df <- sapply(d, function(df){sum(is.na(df)==TRUE);})
-na_df <- data.frame(na_df)
+#$ PassengerId : chr  "0001_01" "0002_01" "0003_01" "0003_02" ...
+length(unique(d$PassengerId)) == nrow(d) #TRUE means it's unique so good
+
+# split PassengerId in 2
+passenger_df <- d[,c("PassengerId", "dat")]
+passenger_df$Group <- str_split_fixed(d$PassengerId, "_", 2)[,1]
+passenger_df$GroupNum <- as.integer(str_split_fixed(d$PassengerId, "_", 2)[,2])
+
+# calculate group size and append attribute to d
+group_size <- passenger_df %>%
+  group_by(Group) %>%
+  summarise(GroupSize = max(GroupNum))
+
+passenger_df <- passenger_df %>%
+  inner_join(group_size, by = "Group")
+
+passenger_df <- passenger_df %>%
+  select(PassengerId, Group, GroupSize)
+
+d <- d %>%
+  inner_join(passenger_df, by = "PassengerId")
+
+# get some group pattern from the group maybe they are assigned not random
+d <- d %>%
+  mutate (
+    GroupBin = case_when (
+      Group < 1000 ~ "0K",
+      Group < 2000 ~ "1k",
+      Group < 3000 ~ "2k",
+      Group < 4000 ~ "3k",
+      Group < 5000 ~ "4k",
+      Group < 6000 ~ "5k",
+      Group < 7000 ~ "6k",
+      Group < 8000 ~ "7k",
+      Group < 9000 ~ "8k",
+      Group >= 9000 ~ "9k",
+      .default = "Other"
+    )
+  )
+
+table(d$GroupBin)  
+
+rm(list = c("passenger_df", "group_size"))
+
+```
+
+```{r}
+# $ HomePlanet  : chr  "Europa" "Earth" "Europa" "Europa" ...
+d %>%
+  group_by(dat, HomePlanet) %>%
+  tally() %>%
+  pivot_wider(names_from = dat, values_from = n) 
+# decent counts by 3 group, impute later
+
+# add missing flag
+d$HomePlanetIsNA <- ifelse(is.na(d$HomePlanet), TRUE, FALSE)
+table(d$HomePlanetIsNA)
+
+```
+
+```{r}
+# $ CryoSleep   : chr  "False" "False" "False" "False" ...
+d %>%
+  group_by(dat, CryoSleep) %>%
+  tally() %>%
+  pivot_wider(names_from = dat, values_from = n) 
+# decent binary counts group, impute later
+
+d$CryoSleepIsNA <- ifelse(is.na(d$CryoSleep), TRUE, FALSE)
+table(d$CryoSleepIsNA)
+```
+
+```{r}
+# $ Destination : chr  "TRAPPIST-1e" "TRAPPIST-1e" "TRAPPIST-1e" "TRAPPIST-1e" ...
+d %>% 
+  group_by(dat, Destination) %>% 
+  tally() %>% 
+  pivot_wider(names_from = dat, values_from = n)
+# decent counts by 3 group, impute later
+
+d$DestinationIsNA <- ifelse(is.na(d$Destination), TRUE, FALSE)
+table(d$DestinationIsNA)
+```
+
+```{r}
+# $ Age         : num  39 24 58 33 16 44 26 28 35 14 ...
+get_percentiles(d$Age) 
+#could cap at p99 but won't, decently normal
+
+ggplot(d, aes(Age)) +
+  geom_histogram(binwidth = 10)
+```
+
+```{r}
+# $ VIP         : chr  "False" "False" "True" "False" ...
+d %>%
+  group_by(dat, VIP) %>%
+  tally() %>%
+  pivot_wider(names_from = dat, values_from = n) 
+# True counts are disproportionate; impute later
+
+d$VIPIsNA <- ifelse(is.na(d$VIP), TRUE, FALSE)
+table(d$VIPIsNA)
+
+```
+
+```{r}
+# $ RoomService : num  0 109 43 0 303 0 42 0 0 0 ...
+# $ FoodCourt   : num  0 9 3576 1283 70 ...
+# $ ShoppingMall: num  0 25 0 371 151 0 3 0 17 0 ...
+# $ Spa         : num  0 549 6715 3329 565 ...
+# $ VRDeck      : num  0 44 49 193 2 0 0 NA 0 0 ...
+
+# figure out how to get the atr names, manual then
+#vars_num <- sapply(d, function(df){is.numeric(df)})
+#vars_num
+
+vars_num <- c("RoomService", "FoodCourt", "ShoppingMall", "Spa", "VRDeck")
+
+summary(d[, vars_num])
+# all vars have around ~300 NAs to impute
+
+# impute now with mice so I can add up
+#num <- mice(d[, vars_num])
+#num
+
+sapply(d[, vars_num], get_percentiles)
+# very skewed data with most people not spending and few heavy spenders
+```
+
+```{r}
+# $ Transported : chr  "False" "True" "False" "False" ...
+d %>%
+  group_by(dat, Transported) %>%
+  tally() %>%
+  pivot_wider(names_from = dat, values_from = n) 
+# good, as expected, no NAs on train and just NAs on test
+
+```
+
+```{r}
+# $ Cabin       : chr  "B/0/P" "F/0/S" "A/0/S" "A/0/S" ...
+# form deck/num/side, where side can be either P for Port or S for Starboard.
+
+# voy
+
+# decompose the 3 values and generate 3 columns
+d$CabinDeck <- str_split_fixed(d$Cabin, "/", 3)[,1]
+d$CabinNum <- str_split_fixed(d$Cabin, "/", 3)[,2]
+d$CabinSide <- str_split_fixed(d$Cabin, "/", 3)[,3]
+d$CabinSide <- ifelse(d$CabinSide == "", NA, d$CabinSide)
+
+# now let's explore each
+d %>%
+  group_by(dat, CabinDeck) %>%
+  tally() %>%
+  pivot_wider(names_from = dat, values_from = n) 
+# T needs to be merged due low n; impute NAs
+
+d %>%
+  group_by(dat, CabinSide) %>%
+  tally() %>%
+  pivot_wider(names_from = dat, values_from = n) 
+# do interaction with Deck, 
+
+# CabinNum?
+d$CabinNum <- as.numeric(d$CabinNum)
+summary(d$CabinNum)
+
+d$CabinNumBin <- d$CabinNum %/% 100
+d$CabinNumBin <- as.factor(d$CabinNumBin)
+table(d$CabinNumBin)
+
+# create Cabin NA FLAG
+d$CabinIsNA <- ifelse(is.na(d$Cabin), TRUE, FALSE)
+table(d$CabinIsNA)
+
+```
+
+```{r}
+#| include: false
+
+# $ Name        : chr  "Maham Ofracculy" "Juanna Vines" "Altark Susent"
+
+# split name/last name from full name
+names <- d$Name
+names <- str_split_fixed(names, " ",2)
+names <- names[,1]
+
+# get the gender
+names
+genders <- gender(names)
+dim(genders)
+head(genders)
+
+# append gender to main dataset
+genders_deduped <- genders[,c(1,4)]
+genders_deduped <- unique(genders_deduped)
+
+d$name <- names
+d <- left_join(d, genders_deduped, by = "name")
+
+# clean and flag
+d$gender <- ifelse(is.na(d$gender), "unknown", d$gender)
+
+rm(genders)
+rm(genders_deduped)
+
+```
+
+```{r}
+# some data cleaning
+
+# coerce all chr vars to factor
+d$HomePlanet <- as.factor(d$HomePlanet)
+d$CryoSleep <- as.factor(d$CryoSleep)
+d$Destination <- as.factor(d$Destination)
+d$VIP <- as.factor(d$VIP)
+d$Group <- as.factor(d$Group)
+d$GroupBin <- as.factor(d$GroupBin)
+d$CabinDeck <- as.factor(d$CabinDeck)
+d$CabinSide <- as.factor(d$CabinSide)
+d$CabinNum <- as.factor(d$CabinNum)
+d$gender <- as.factor(d$gender)
+
+# remove useless vars from d
+d <- d %>%
+  select(-c(Cabin,
+            Name,
+            name))
+
+```
+
+```{r}
+# understand and visualize missing values
+
+na_df <- data.frame(
+  sapply(d, function(df){sum(is.na(df)==TRUE);}))
+
 na_df$var <- row.names(na_df)
+
 print(na_df)
-```
+# most variables have ~300 NAs so let's check if it's a pattern.
 
-Most variables have \~300 NAs so let's check if it's a pattern.
-
-```{r}
-vis_miss(d,
-         sort_miss = TRUE,
-         #cluster = TRUE,
-         show_perc_col = TRUE) #no concerning pattern is observed
-```
-
-There isn't an obvious pattern, but let's double check
-
-```{r}
-
-# variables with NA
-vars_na <- na_df %>%
-  filter(na_df > 0) %>%
-  select(var)
-
-md.pattern(d[, 1:5],
-           plot = TRUE,
-           rotate.names = TRUE)
-
-# hard to see but assume no pattern ovbious
-
-```
-
-Let's impute assuming it's random using mice, instead of manually doing median or mode.
-
-```{r}
-# impute NAs
-d_imp <- mice(d)
-           #method = "cart")
-
-d_imp
-head(complete(d_imp))
-d_imp <- data.frame(complete(d_imp))
-
-sapply(d_imp, function(df){sum(is.na(df)==TRUE);})
-
-d <- d_imp
-
-# validate no more NA
+vis_miss(d, 
+         cluster = TRUE,
+         #sort_miss = TRUE,
+         show_perc_col = TRUE) 
+#no concerning pattern is observed
 
 
 ```
 
 ```{r}
-# missing values
-# corr
-# y
-# univariate EDA to get to know the vars
-# univ eda to check potential of prediction
-# basic rpart
-# caret algos - rf, xgb, mn, etc...
+# impute missing values
 
-# setwd(wd) - figure out how to make work at knitr root.dir option
+#voy 
+# learn to use MICE
 
-```
+cols_with_NA <- c("HomePlanet", 
+                  "CryoSleep",
+                  "Destination",
+                  "Age",
+                  "VIP",
+                  "RoomService",
+                  "FoodCourt",
+                  "ShoppingMall",
+                  "Spa",
+                  "VRDeck")
 
-## Quarto
+t <- d[, cols_with_NA]
+sapply(t, function(df){sum(is.na(df)==TRUE);})
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+t <- mice(t)
+head(complete(t))
 
-## Running Code
+# confirm no more missing values
+t_df <- data.frame(complete(t))
+sapply(t_df, function(df){sum(is.na(df)==TRUE);})
 
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+# once confirmed it worked, copy back and clean
+#d <- t_df
+#rm(t)
+#rm(t_df)
 
-```{r}
-1 + 1
-```
-
-You can add options to executable code like this
-
-```{r}
-#| echo: false
-2 * 2
-```
-
-The `echo: false` option disables the printing of code (only output is displayed).
-
-Hola soy Walter y estoy probando R
-
-```{r}
-wd <- "C:/GitHub/spaceship_titanic/"
-setwd(wd)
-
-train <- read.csv("./data/train.csv",
-                  stringsAsFactors = FALSE)
-```
-
-Y ahora print la head
-
-```{r}
-head(train)
 ```

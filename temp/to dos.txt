@@ -1,0 +1,121 @@
+# -----------------------------------------------------------------------------
+# to dos
+# -----------------------------------------------------------------------------
+
+# que pasa con eda si ya hice coerca a factor y necesito juntar? croe que ya lacas?
+
+# feature eng
+	# calculate total spend per passenger
+	# transform/flag spenders cause it's very skew
+# seedcorr wtf?
+# univ eda to check potential of prediction
+# interactions
+	# add interaction HomePlanet vs Destination 
+	# otras?
+# var type:
+	# coerce logicals to factor for modeling?
+	# automate chr to fct?
+# clean r
+	# remove PassengerId, Group
+
+# basic rpart
+# caret rf, # caret boost, # caret svm, # caret knn, # caret mn
+# setwd(wd) - figure out how to make work at knitr root.dir option
+# hacer func que da vars con NA
+
+
+# -----------------------------------------------------------------------------
+# to read
+# -----------------------------------------------------------------------------
+
+# https://www.r-bloggers.com/2023/01/imputation-in-r-top-3-ways-for-imputing-missing-data/#:~:text=We%E2%80%99ll%20now%20explore%20a%20suite%20of%20basic%20techniques%20for%20imputation
+# https://www.r-bloggers.com/2016/04/missing-value-treatment/#:~:text=Prediction%20is%20most%20advanced%20method%20to%20impute%20your%20missing%20values
+# https://www.r-bloggers.com/2015/10/imputing-missing-data-with-r-mice-package/
+
+
+# -----------------------------------------------------------------------------
+# sandbox to delete
+# -----------------------------------------------------------------------------
+
+# get df with variables with NA
+vars_na <- na_df %>%
+  filter(na_df > 0) %>%
+  select(var)
+
+# plot vars with na to see patterm
+md.pattern(d[, 1:5],
+           plot = TRUE,
+           rotate.names = TRUE)
+
+#basic tree to get idea of predictors
+tr <- d %>%
+  filter(dat == "train")
+
+mdl_part <- rpart(as.factor(Transported) ~ . -dat -PassengerId -Name
+                  -Cabin -Group,
+                  data = tr)
+mdl_part
+#rpart.plot(mdl_part)
+fancyRpartPlot(mdl_part)
+
+# trying impute but didn't work
+x <- d[,c("Age", "RoomService")]
+d2 <- impute.knn(as.maxtrix(x))
+m <- as.matrix(x)
+
+d2 <- impute(m,
+             lmFun = "lassoR",
+             cFun = "rpartC")
+
+# Print column names with their column numbers
+for (i in seq_along(colnames(d))) {
+  cat(i, colnames(d)[i], "\n")
+}
+
+# plot ala caret
+featurePlot(x = train[,c(6,8,9)], 
+            y = as.factor(train$Transported), 
+            plot = "pairs",
+            auto.key = list(columns = 1)
+            )
+            
+featurePlot(x = train[,c(6,8,9)], 
+            y = train$Transported, 
+            plot = "box", 
+            ## Pass in options to bwplot() 
+            scales = list(y = list(relation="free"),
+                          x = list(rot = 90)
+            ))
+            
+            #layout = c(3,1))
+            
+            auto.key = list(columns = 2))
+
+featurePlot(x = iris[, 1:4], 
+            y = iris$Species, 
+            plot = "pairs",
+            ## Add a key at the top
+            auto.key = list(columns = 3))
+
+featurePlot(x = iris[, 1:4], 
+            y = iris$Species, 
+            plot = "box", 
+            ## Pass in options to bwplot() 
+            scales = list(y = list(relation="free"),
+                          x = list(rot = 90)),  
+            layout = c(4,1 ), 
+            auto.key = list(columns = 2))
+
+# testing plot a la caret
+train2 <- train %>%
+  filter(RoomService > 0) %>%
+  filter(RoomService < 1000)
+
+featurePlot(x = train2[, 8:9], 
+            y = as.factor(train2$Transported), 
+            plot = "box", 
+            ## Pass in options to bwplot() 
+            scales = list(y = list(relation="free"),
+                          x = list(rot = 90)),  
+            layout = c(2,1 ), 
+            auto.key = list(columns = 2))
